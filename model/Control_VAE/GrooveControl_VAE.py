@@ -90,7 +90,7 @@ class GrooveControl_VAE(torch.nn.Module):
             in_attention=self.use_in_attention
         )
 
-    def forward(self, hvo, density, intensity, genre):
+    def forward(self, hvo, density, intensity, genre, hvo_score=None):
         """
         Forward method for model, returning logits. Needs sampling to convert into an actual drum pattern.
 
@@ -98,29 +98,34 @@ class GrooveControl_VAE(torch.nn.Module):
         @param density: (tensor) shape [n]
         @param intensity: (tensor) shape [n]
         @param genre: (tensor) shape [n, n_genres]
+        @param: hvo_score: (tensor) shape [n, max_len, 27]
         @return: (h, v, o), mu, log_var, latent_z
         """
+
+        # For groove transfer: extract hits from intended by taking every third element
+        score = hvo_score[:, :, ::3] #if hvo_score is not None else hvo[:, :, ::3] # hvo and hvo_
+
         mu, log_var, latent_z = self.encode(hvo)
-        h_logits, v_logits, o_logits = self.Decoder(latent_z, density, intensity, genre)
+        h_logits, v_logits, o_logits = self.Decoder(latent_z, density, intensity, genre, score)
 
         return (h_logits, v_logits, o_logits), mu, log_var, latent_z
 
-    def predict(self, hvo, density, intensity, genre, thresh=0.5, return_concatenated=False):
+    def predict(self, hvo, density, intensity, genre, score, thresh=0.5, return_concatenated=False):
         if not self.training:
             with torch.no_grad():
-                return self.encode_decode(hvo, density, intensity, genre,
+                return self.encode_decode(hvo, density, intensity, genre, score,
                                           threshold=thresh, use_thresh=True, use_pd=False,
                                           return_concatenated=return_concatenated)
         else:
-            return self.encode_decode(hvo, density, intensity, genre,
+            return self.encode_decode(hvo, density, intensity, genre, score,
                                       threshold=thresh, use_thresh=True,
                                       use_pd=False, return_concatenated=return_concatenated)
 
-    def encode_decode(self, hvo, density, intensity, genre,
+    def encode_decode(self, hvo, density, intensity, genre, score,
                       threshold=0.5, use_thresh=True, use_pd=False, return_concatenated=False):
 
         mu, log_var, latent_z = self.encode(hvo)
-        h, v, o = self.Decoder.decode(latent_z, density, intensity, genre,
+        h, v, o = self.Decoder.decode(latent_z, density, intensity, genre, score,
                                       threshold=threshold, use_thresh=use_thresh,
                                       use_pd=use_pd, return_concatenated=False)
 

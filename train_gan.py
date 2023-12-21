@@ -232,7 +232,7 @@ if __name__ == "__main__":
     wandb_run = wandb.init(
         config=hparams,  # either from config file or CLI specified hyperparameters
         project=hparams["wandb_project"],  # name of the project
-        entity="mmil_julian",  # saves in the mmil_vae_cntd team account
+        # entity="mmil_julian",  # saves in the mmil_vae_cntd team account
         settings=wandb.Settings(code_dir="train.py")  # for code saving
     )
 
@@ -482,16 +482,16 @@ if __name__ == "__main__":
                                                                 reduce_dim=collapse_tapped_sequence)
                 wandb.log(piano_rolls, commit=False)
 
-            if args.generate_umap_plots:
-                umap_plot = generate_density_intensity_umap \
-                    (model=groovecontrol_model,
-                     device=config.device,
-                     dataset=test_dataset,
-                     collapse_tapped_sequence=collapse_tapped_sequence,
-                     density_norm_fn=training_dataset.normalize_density,
-                     intensity_norm_fn=training_dataset.normalize_intensity)
+            # if args.generate_umap_plots:
+            #     umap_plot = generate_density_intensity_umap \
+            #         (model=groovecontrol_model,
+            #          device=config.device,
+            #          dataset=test_dataset,
+            #          collapse_tapped_sequence=collapse_tapped_sequence,
+            #          density_norm_fn=training_dataset.normalize_density,
+            #          intensity_norm_fn=training_dataset.normalize_intensity)
 
-                wandb.log(umap_plot, commit=False)
+            #     wandb.log(umap_plot, commit=False)
 
         # Get Hit Scores for the entire train and the entire test set
         # ---------------------------------------------------------------------------------------------------

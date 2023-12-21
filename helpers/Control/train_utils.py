@@ -64,7 +64,7 @@ def batch_loop(dataloader_, vae_model, adversarial_models, hit_loss_fn, velocity
             [tensor.to(device) if tensor.device.type != device else tensor for tensor in data_list]
         # Forward pass of VAE
         # ---------------------------------------------------------------------------------------
-        (h_logits, v_logits, o_logits), mu, log_var, latent_z = vae_model.forward(inputs, densities, intensities, genres)
+        (h_logits, v_logits, o_logits), mu, log_var, latent_z = vae_model.forward(inputs, densities, intensities, genres, hvo_score=outputs)
         h_targets, v_targets, o_targets = torch.split(outputs, int(outputs.shape[2] / 3), 2)
 
         # Compute VAE losses

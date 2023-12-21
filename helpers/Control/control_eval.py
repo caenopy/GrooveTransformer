@@ -202,10 +202,14 @@ def get_piano_rolls_for_control_model(vae_model, dataset, device, genre_mapping_
         in_grooves = torch.tensor(
             np.repeat(hvo_seq.flatten_voices(reduce_dim=reduce_dim)[np.newaxis, :], n_examples, axis=0),
             dtype=torch.float32)
-
+        
+        score = torch.tensor(
+            np.repeat(hvo_seq.hvo[np.newaxis, :, ::3], n_examples, axis=0),
+            dtype=torch.float32)
+        
         outputs, mu, log_var, latent_z = vae_model.predict(in_grooves.to(device), densities.to(device),
                                                            intensities.to(device), genre.to(device),
-                                                           return_concatenated=True)
+                                                           score.to(device), return_concatenated=True)
         output_hvo_arrays = [seq.squeeze(0).cpu().numpy() for seq in torch.split(outputs, 1, dim=0)]
 
         # Create nested dictionary
@@ -256,6 +260,10 @@ def get_hit_scores_for_control_model(model, device, dataset_setting_json_path, s
     in_groove = torch.tensor(
         np.array([hvo_seq.flatten_voices(reduce_dim=collapse_tapped_sequence)
                   for hvo_seq in hvo_seqs]), dtype=torch.float32)
+    
+    score = torch.tensor(
+        np.array([hvo_seq.hvo[:, ::3]
+                  for hvo_seq in hvo_seqs]), dtype=torch.float32)
 
     densities = torch.zeros(len(hvo_seqs), dtype=torch.float32)
     intensities = torch.zeros(len(hvo_seqs), dtype=torch.float32)
@@ -276,16 +284,18 @@ def get_hit_scores_for_control_model(model, device, dataset_setting_json_path, s
     # batchify the input
     model.eval()
     with torch.no_grad():
-        for batch_ix, (hvo_batch_in, density_batch_in, intensity_batch_in, genre_batch_in) \
+        for batch_ix, (hvo_batch_in, density_batch_in, intensity_batch_in, genre_batch_in, score_batch_in) \
                 in enumerate(zip(torch.split(in_groove, 32),
                                  torch.split(densities, 32),
                                  torch.split(intensities, 32),
-                                 torch.split(genres, 32))):
+                                 torch.split(genres, 32),
+                                 torch.split(score, 32))):
             hvos_array, _, _, _ = model.predict(
                 hvo_batch_in.to(device),
                 density_batch_in.to(device),
                 intensity_batch_in.to(device),
                 genre_batch_in.to(device),
+                score_batch_in.to(device),
                 return_concatenated=True)
             predictions.append(hvos_array.detach().cpu().numpy())
 
@@ -309,6 +319,10 @@ def get_control_model_density_prediction_averages(model, dataset, device, n_genr
     hvo_sequences = random.sample(hvo_seq_set, batch_size)
     in_grooves = torch.tensor(np.array([hvo_seq.flatten_voices(reduce_dim=reduce_dim) for hvo_seq in hvo_sequences]),
                               dtype=torch.float32)
+    
+    score = torch.tensor(
+        np.array([hvo_seq.hvo[:, ::3]
+                  for hvo_seq in hvo_sequences]), dtype=torch.float32)
 
     densities = [0.01, 0.5, 0.99]
     predicted_densities = {}
@@ -324,6 +338,7 @@ def get_control_model_density_prediction_averages(model, dataset, device, n_genr
             density_inputs.to(device),
             intensity_inputs.to(device),
             genre_inputs.to(device),
+            score.to(device),
             return_concatenated=True)
         hits = predictions[:, :, :9]
 
@@ -349,6 +364,10 @@ def get_control_model_intensity_prediction_averages(model, dataset, device, n_ge
     hvo_sequences = random.sample(hvo_seq_set, batch_size)
     in_grooves = torch.tensor(np.array([hvo_seq.flatten_voices(reduce_dim=reduce_dim) for hvo_seq in hvo_sequences]),
                               dtype=torch.float32)
+    
+    score = torch.tensor(
+        np.array([hvo_seq.hvo[:, ::3]
+                  for hvo_seq in hvo_sequences]), dtype=torch.float32)
 
     intensities = [0.01, 0.5, 0.99]
     predicted_intensities = {}
@@ -363,6 +382,7 @@ def get_control_model_intensity_prediction_averages(model, dataset, device, n_ge
             density_inputs.to(device),
             intensity_inputs.to(device),
             genre_inputs.to(device),
+            score.to(device),
             return_concatenated=False)
 
         # Remove non-hit velocity values

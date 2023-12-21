@@ -113,7 +113,7 @@ class Control_Decoder(torch.nn.Module):
             embedding_size=self.output_embedding_size,
             d_model=self.d_model)
 
-    def forward(self, latent_z, density, intensity, genre):
+    def forward(self, latent_z, density, intensity, genre, score):
         """
         Takes the latent vector z, as well as ground truth (or predicted) control values of
         density, intensity and genre and outputs prediction logits for hits, velocities and offsets
@@ -121,9 +121,10 @@ class Control_Decoder(torch.nn.Module):
         @param density: (Tensor) [batch] single float values of ground-truth densities
         @param intensity: (Tensor) [batch] single float values of ground-truth intensities
         @param genre: (tensor) [batch, n_genres] one-hot encoded ground-truth genre id
+        @param score: (Tensor) [N x max_len x 1] ground-truth hits
         @return: h, v, o (tensors) [N, output_max_len, output_embedding_size/3]
         """
-        pre_out = self.DecoderInputLayer(latent_z, density, intensity, genre)
+        pre_out = self.DecoderInputLayer(latent_z, density, intensity, genre, score)
 
 
         if self.in_attention:
@@ -136,7 +137,7 @@ class Control_Decoder(torch.nn.Module):
 
         return h_logits, v_logits, o_logits
 
-    def decode(self, latent_z, density, intensity, genre,
+    def decode(self, latent_z, density, intensity, genre, score,
                threshold=0.5, use_thresh=True, use_pd=False, return_concatenated=False):
         """
         Converts the latent vector into hit, vel, offset values
@@ -145,6 +146,7 @@ class Control_Decoder(torch.nn.Module):
         @param density: (Tensor) [N]
         @param intensity: (Tensor) [N]
         @param genre: (Tensor) [N]
+        @param score: (Tensor) [N x max_len x 9]
         @param threshold: (float) Threshold for hit prediction
         @param use_thresh: (bool) Whether to use thresholding for hit prediction
         @param use_pd: (bool) Whether to use a pd for hit prediction
@@ -154,7 +156,7 @@ class Control_Decoder(torch.nn.Module):
 
         self.eval()
         with torch.no_grad():
-            h_logits, v_logits, o_logits = self.forward(latent_z, density, intensity, genre)
+            h_logits, v_logits, o_logits = self.forward(latent_z, density, intensity, genre, score)
             h = get_hits_activation(h_logits, use_thres=use_thresh, thres=threshold, use_pd=use_pd)
             v = torch.sigmoid(v_logits)
 
@@ -167,14 +169,14 @@ class Control_Decoder(torch.nn.Module):
 
         return h, v, o if not return_concatenated else torch.cat([h, v, o], dim=-1)
 
-    def get_decoder_input_layer_output(self, latent_z, density, intensity, genre):
+    def get_decoder_input_layer_output(self, latent_z, density, intensity, genre, score):
         """
         Utility method to get the forward method of just input layer. Useful for evaluations
         to visualize the latent space after incorporating parameters.
         """
-        return self.DecoderInputLayer.forward(latent_z, density, intensity, genre)
+        return self.DecoderInputLayer.forward(latent_z, density, intensity, genre, score)
 
-    def sample(self, latent_z, density, intensity, genre, voice_thresholds,
+    def sample(self, latent_z, density, intensity, genre, score, voice_thresholds,
                voice_max_count_allowed, return_concatenated=False, sampling_mode=0):
         """Converts the latent vector into hit, vel, offset values
 
@@ -187,7 +189,7 @@ class Control_Decoder(torch.nn.Module):
         """
         self.eval()
         with torch.no_grad():
-            h_logits, v_logits, o_logits = self.forward(latent_z, density, intensity, genre)
+            h_logits, v_logits, o_logits = self.forward(latent_z, density, intensity, genre, score)
             _h = torch.sigmoid(h_logits)
             h = torch.zeros_like(_h)
 
@@ -224,9 +226,9 @@ class ControlDecoderInputLayer(torch.nn.Module):
 
     def __init__(self, max_len, latent_dim, d_model, n_genres):
         """
-        Takes a latent layer, as well as 3 control parameters (density, intensity, genre)
+        Takes a latent layer, as well as 3 control parameters (density, intensity, genre) and a score
         and transforms into a single [Batch_size, max_len, d_model] tensor
-        The initial z is fed through an FFN, to a size of (d_model - 3).
+        The initial z is fed through an FFN, to a size of (d_model - 12).
         The density and intensity continuous values are repeated and concatenated on final dimension
         Genre (one-hot encoding) is fed through a separate FFN and concatenated on final dimension
         output = concat(FFN(z) + repeat(density) + repeat(intensity) + FFN(genre))
@@ -240,7 +242,7 @@ class ControlDecoderInputLayer(torch.nn.Module):
         self.max_len = max_len
         self.d_model = d_model
 
-        latent_projection_size = int(max_len * (d_model - 3))
+        latent_projection_size = int(max_len * (d_model - 12))
         self.latent_linear = torch.nn.Linear(latent_dim, latent_projection_size)
         self.genre_linear = torch.nn.Linear(n_genres, max_len)
 
@@ -250,20 +252,21 @@ class ControlDecoderInputLayer(torch.nn.Module):
         self.genre_linear.bias.data.zero_()
         self.genre_linear.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, latent_z, density, intensity, genre):
+    def forward(self, latent_z, density, intensity, genre, score):
         """
         @param latent_z: (tensor) [batch, latent_dim] the latent vector produced by the VAE encoder
         @param density: (tensor) [batch] single float values of ground-truth densities
         @param intensity: (tensor) [batch] single float values of ground-truth intensities
         @param genre: (tensor) [batch, n_genres] one-hot encoded ground-truth genre id
+        @param score: (tensor) [batch, max_len, 9] target hits
         @return: (tensor) [batch, max_len, d_model]
         """
         latent_z = self.latent_linear.forward(latent_z)
-        latent_z = latent_z.view(-1, self.max_len, (self.d_model - 3))
+        latent_z = latent_z.view(-1, self.max_len, (self.d_model - 12))
         density = density.view(density.shape[0], 1).repeat(1, self.max_len).unsqueeze(dim=-1)
         intensity = intensity.view(intensity.shape[0], 1).repeat(1, self.max_len).unsqueeze(dim=-1)
         genre = self.genre_linear.forward(genre).unsqueeze(dim=-1)
-        z_star = torch.cat((latent_z, density, intensity, genre), dim=-1)
+        z_star = torch.cat((latent_z, density, intensity, genre, score), dim=-1)
 
         return z_star
 
