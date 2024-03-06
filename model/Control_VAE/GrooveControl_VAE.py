@@ -90,7 +90,7 @@ class GrooveControl_VAE(torch.nn.Module):
             in_attention=self.use_in_attention
         )
 
-    def forward(self, hvo, density, intensity, genre, hvo_score=None):
+    def forward(self, hvo, density, intensity, genre, hvo_score):
         """
         Forward method for model, returning logits. Needs sampling to convert into an actual drum pattern.
 
